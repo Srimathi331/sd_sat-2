@@ -1,0 +1,62 @@
+# Local full-stack environment:  docker compose up --build
+x-service: &svc
+  env_file: .env.example
+  restart: unless-stopped
+  depends_on: [postgres, mongo, redis, kafka]
+
+services:
+  # ---------- Data stores ----------
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: news, POSTGRES_PASSWORD: news, POSTGRES_DB: postgres }
+    volumes: [pgdata:/var/lib/postgresql/data, ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql]
+  mongo:
+    image: mongo:7
+    volumes: [mongodata:/data/db]
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+  kafka:
+    image: apache/kafka:3.8.0           # single-node KRaft broker for dev
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+  # ---------- Microservices ----------
+  user-service:
+    <<: *svc
+    build: { context: ., dockerfile: services/user-service/Dockerfile }
+    ports: ["4001:4001"]
+  topic-service:
+    <<: *svc
+    build: { context: ., dockerfile: services/topic-service/Dockerfile }
+    ports: ["4002:4002"]
+  article-service:
+    <<: *svc
+    build: { context: ., dockerfile: services/article-service/Dockerfile }
+    ports: ["4003:4003"]
+  feed-service:
+    <<: *svc
+    build: { context: ., dockerfile: services/feed-service/Dockerfile }
+    ports: ["4004:4004"]
+  notification-service:
+    <<: *svc
+    build: { context: ., dockerfile: services/notification-service/Dockerfile }
+    ports: ["4005:4005"]
+
+  # ---------- Edge ----------
+  api-gateway:
+    <<: *svc
+    build: { context: ., dockerfile: services/api-gateway/Dockerfile }
+    ports: ["8080:8080"]
+    depends_on: [user-service, topic-service, article-service, feed-service, notification-service]
+
+volumes: { pgdata: {}, mongodata: {} }

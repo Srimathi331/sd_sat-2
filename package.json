@@ -1,0 +1,13 @@
+{
+  "name": "news-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personalized news platform - microservices (Node.js, PostgreSQL, MongoDB, Redis, Kafka)",
+  "workspaces": ["packages/*", "services/*"],
+  "scripts": {
+    "start:all": "docker compose up --build",
+    "test": "npm test --workspaces --if-present",
+    "lint": "node --check packages/common/src/index.js"
+  },
+  "engines": { "node": ">=18" }
+}

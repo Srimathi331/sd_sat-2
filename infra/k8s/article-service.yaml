@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: article-service, labels: { app: article-service } }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: article-service } }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 25%, maxUnavailable: 0 } }   # zero-downtime deploys
+  template:
+    metadata: { labels: { app: article-service } }
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: article-service
+          image: registry.example.com/news/article-service:latest
+          ports: [{ containerPort: 4003 }]
+          envFrom: [{ configMapRef: { name: news-config } }, { secretRef: { name: news-secrets } }]
+          resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: "1", memory: 512Mi } }
+          livenessProbe:  { httpGet: { path: /health, port: 4003 }, periodSeconds: 10 }
+          readinessProbe: { httpGet: { path: /ready,  port: 4003 }, periodSeconds: 5 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: article-service }
+spec: { selector: { app: article-service }, ports: [{ port: 4003, targetPort: 4003 }] }
+---
+# Horizontal Pod Autoscaler: add pods when CPU > 60%. Scale up fast, scale down slowly (spikes come in waves).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: article-service }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: article-service }
+  minReplicas: 3
+  maxReplicas: 40
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } } }]
+  behavior:
+    scaleUp:   { stabilizationWindowSeconds: 0,   policies: [{ type: Percent, value: 100, periodSeconds: 15 }] }
+    scaleDown: { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 20,  periodSeconds: 60 }] }
